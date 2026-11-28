@@ -173,13 +173,13 @@ vAPI.Net = class extends vAPI.Net {
         );
     }
 
-    onBeforeSuspendableRequest(details) {
+    onBeforeRequest(details) {
         const hn = hostnameFromNetworkURL(details.url);
         const dnsEntry = this.dnsFromCache(hn);
         if ( isResolvedObject(dnsEntry) && dnsEntry.ip ) {
             details.ip = dnsEntry.ip;
         }
-        const r = super.onBeforeSuspendableRequest(details);
+        const r = super.onBeforeRequest(details);
         if ( r !== undefined ) {
             if (
                 r.cancel === true ||
@@ -218,7 +218,7 @@ vAPI.Net = class extends vAPI.Net {
         }
         if ( proceed === false ) { return; }
         // Must call method on base class
-        return super.onBeforeSuspendableRequest(details);
+        return super.onBeforeRequest(details);
     }
 
     dnsToCache(hn, record, details) {
@@ -337,17 +337,14 @@ vAPI.Net = class extends vAPI.Net {
         for ( const entry of entries ) {
             const { resolve } = entry;
             if ( resolve === undefined ) { continue; }
-            if ( discard ) {
-                resolve();
-                entry.outcome = undefined;
-                continue;
-            }
             let r;
-            try {
-                r = this.onBeforeSuspendableRequest(entry.details);
-            } catch {
+            if ( discard ) {
+                entry.outcome = undefined;
+            } else {
+                try { r = this.onBeforeRequest(entry.details); } catch { }
             }
             resolve(r);
+            entry.resolve = undefined;
         }
     }
 

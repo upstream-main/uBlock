@@ -174,7 +174,7 @@ function onBeforeRootFrameRequest(fctxt) {
     }
 
     const pageStore = µb.bindTabToPageStore(fctxt.tabId, 'beforeRequest');
-    if ( pageStore !== null ) {
+    if ( pageStore ) {
         pageStore.journalAddRequest(fctxt, result);
     }
 
@@ -184,7 +184,7 @@ function onBeforeRootFrameRequest(fctxt) {
 
     // https://github.com/uBlockOrigin/uBlock-issues/issues/760
     //   Redirect non-blocked request?
-    if ( trusted === false && pageStore !== null ) {
+    if ( trusted === false && pageStore ) {
         if ( result !== 1 ) {
             pageStore.redirectNonBlockedRequest(fctxt);
         } else {
@@ -215,7 +215,9 @@ function onBeforeRootFrameRequest(fctxt) {
     let reason = logData.reason;
 
     // Find out the URL navigated to should the document not be strict-blocked
-    pageStore.skipMainDocument(fctxt, false);
+    if ( pageStore ) {
+        pageStore.skipMainDocument(fctxt, false);
+    }
 
     if ( reason === undefined && Array.isArray(fctxt.filter) ) {
         const filter = fctxt.filter.find(a => a.reason !== undefined);
@@ -1342,13 +1344,14 @@ const webRequest = {
     onBeforeRequest,
 
     start(details = {}) {
-        vAPI.net.setSuspendableListener(onBeforeRequest);
+        vAPI.net.setBeforeRequestListener(onBeforeRequest, {
+            discard: details.discard,
+        });
         vAPI.net.addListener('onHeadersReceived', onHeadersReceived, {
             urls: [ 'http://*/*', 'https://*/*' ]
         }, [ 'blocking', 'responseHeaders' ]);
         onResponseStarted.start();
         requestHeadersManager.start();
-        vAPI.net.unsuspend({ all: true, discard: details.discard });
     },
 
     strictBlockBypass(hostname) {

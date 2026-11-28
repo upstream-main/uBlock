@@ -46,11 +46,6 @@ vAPI.Net = class {
             }
         }
         this.warOrigin = vAPI.Net.warOrigin;
-        this.suspendableListener = undefined;
-        this.deferredSuspendableListener = undefined;
-        this.listenerMap = new WeakMap();
-        this.suspendDepth = 0;
-        this.unprocessedTabs = new Map();
     }
 
     start() {
@@ -66,7 +61,7 @@ vAPI.Net = class {
                 if ( details.url.startsWith(this.warOrigin) ) {
                     return this.onBeforeWarRequest(details);
                 }
-                return this.onBeforeSuspendableRequest(details);
+                return this.onBeforeRequest(details);
             },
             this.denormalizeFilters({ urls: [
                 'http://*/*',
@@ -128,7 +123,7 @@ vAPI.Net = class {
 
     addListener(which, clientListener, filters, options) {
         const actualFilters = this.denormalizeFilters(filters);
-        const actualListener = this.makeNewListenerProxy(clientListener);
+        const actualListener = this.#makeNewListenerProxy(clientListener);
         browser.webRequest[which].addListener(
             actualListener,
             actualFilters,
@@ -136,60 +131,31 @@ vAPI.Net = class {
         );
     }
 
-    onBeforeSuspendableRequest(details) {
-        if ( this.suspendableListener === undefined ) {
-            if ( details.tabId < 0 ) { return; }
-            return this.onSuspendedRequest(details);
-        }
-        return this.suspendableListener(details);
-    }
-
-    setSuspendableListener(listener) {
-        this.suspendableListener = listener;
-        vAPI.setDefaultIcon('', null);
-    }
-
     removeListener(which, clientListener) {
-        const actualListener = this.listenerMap.get(clientListener);
+        const actualListener = this.#listenerMap.get(clientListener);
         if ( actualListener === undefined ) { return; }
-        this.listenerMap.delete(clientListener);
+        this.#listenerMap.delete(clientListener);
         browser.webRequest[which].removeListener(actualListener);
     }
 
-    makeNewListenerProxy(clientListener) {
-        const actualListener = details => {
-            this.normalizeDetails(details);
-            return clientListener(details);
-        };
-        this.listenerMap.set(clientListener, actualListener);
-        return actualListener;
+    onBeforeRequest(details) {
+        return this.#beforeRequestListener(details);
+    }
+
+    setBeforeRequestListener(listener, details = {}) {
+        this.#beforeRequestListener = listener;
+        vAPI.setDefaultIcon('', null);
+        this.unsuspend(details);
     }
 
     handlerBehaviorChanged() {
         browser.webRequest.handlerBehaviorChanged();
     }
 
-    onSuspendedRequest(details) {
-        const defer = this.suspendDepth !== 0;
-        const entry = this.suspendOneRequest(defer, details);
-        if ( entry === undefined ) { return; }
-        const { tabId } = details;
-        const requests = this.unprocessedTabs.get(tabId) ?? [];
-        if ( requests.length === 0 ) {
-            this.unprocessedTabs.set(tabId, requests);
-        }
-        requests.push(entry);
-        if ( entry.outcome ) {
-            return entry.outcome;
-        }
-        if ( this.defaultBadgeText === '!' ) { return; }
-        vAPI.setDefaultIcon(null, '!');
-    }
-
     hasUnprocessedRequest(tabId) {
-        if ( this.unprocessedTabs.size === 0 ) { return false; }
+        if ( this.#unprocessedTabs.size === 0 ) { return false; }
         if ( tabId === undefined ) { return true; }
-        const requests = this.unprocessedTabs.get(tabId);
+        const requests = this.#unprocessedTabs.get(tabId);
         if ( requests === undefined ) { return false; }
         return requests.some(a => a.outcome === undefined);
     }
@@ -201,24 +167,17 @@ vAPI.Net = class {
     }
 
     suspend() {
-        this.suspendDepth += 1;
+        this.#suspended = true;
     }
 
     unsuspend(details = {}) {
-        const { all = false, discard = false, clear = true } = details;
-        if ( all ) {
-            this.suspendDepth = 0;
-        } else if ( this.suspendDepth > 0 ) {
-            this.suspendDepth -= 1;
-        }
-        if ( this.suspendDepth !== 0 ) { return; }
-        const unprocessedTabs = this.unprocessedTabs;
-        if ( clear ) {
-            this.unprocessedTabs = new Map();
-        }
-        for ( const [ tabId, requests ] of unprocessedTabs ) {
+        this.#suspended = false;
+        const { discard = false, clear = true } = details;
+        for ( const [ tabId, requests ] of this.#unprocessedTabs ) {
             this.unsuspendManyRequests(tabId, requests, discard);
         }
+        if ( clear !== true ) { return; }
+        this.#unprocessedTabs.clear();
     }
 
     headerValue(headers, name) {
@@ -235,4 +194,36 @@ vAPI.Net = class {
     }
 
     static warOrigin = vAPI.getURL('/web_accessible_resources').replace(/\/$/, '');
+
+    #beforeRequestListener = this.#onSuspendedRequest;
+    #suspended = false;
+    #listenerMap = new WeakMap();
+    #unprocessedTabs = new Map();
+
+    #makeNewListenerProxy(clientListener) {
+        const actualListener = details => {
+            this.normalizeDetails(details);
+            return clientListener(details);
+        };
+        this.#listenerMap.set(clientListener, actualListener);
+        return actualListener;
+    }
+
+    #onSuspendedRequest(details) {
+        if ( details.tabId < 0 ) { return; }
+        const entry = this.suspendOneRequest(this.#suspended, details);
+        if ( entry === undefined ) { return; }
+        const { tabId } = details;
+        const requests = this.#unprocessedTabs.get(tabId) ?? [];
+        if ( requests.length === 0 ) {
+            this.#unprocessedTabs.set(tabId, requests);
+        }
+        requests.push(entry);
+        if ( entry.outcome ) {
+            return entry.outcome;
+        }
+        if ( this.defaultBadgeText === '!' ) { return; }
+        this.defaultBadgeText = '!';
+        vAPI.setDefaultIcon(null, '!');
+    }
 };
