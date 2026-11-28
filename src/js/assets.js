@@ -1278,7 +1278,6 @@ async function diffUpdater() {
                 while ( toHardUpdate.length !== 0 ) {
                     const assetDetails = toHardUpdate.shift();
                     assetDetails.fetch = true;
-                    ubolog('Diff updater: post message', assetDetails);
                     worker.postMessage(assetDetails);
                     pendingOps += 1;
                 }
@@ -1297,7 +1296,6 @@ async function diffUpdater() {
                     data.text = result.content || '';
                     data.status = undefined;
                     checkAndCorrectDiffPath(data);
-                    ubolog('Diff updater: post message', data);
                     worker.postMessage(data);
                 });
                 return;
@@ -1335,7 +1333,6 @@ async function diffUpdater() {
                 ubolog('Diff updater: soft updating', toSoftUpdate.map(v => v.assetKey).join());
                 while ( toSoftUpdate.length !== 0 ) {
                     const assetDetails = toSoftUpdate.shift();
-                    ubolog('Diff updater: post message', data);
                     worker.postMessage(assetDetails);
                     pendingOps += 1;
                 }
@@ -1347,7 +1344,7 @@ async function diffUpdater() {
         worker.postMessage({ what: 'start' });
         vAPI.defer.once(5000).then(( ) => {
             if ( workerIsAlive ) { return; }
-            terminate('Worker not responding');
+            terminate('Diff updater: worker not responding');
         });
     } catch (reason) {
         ubolog(`Diff updater: cycle aborted because ${reason}`);
