@@ -1270,6 +1270,7 @@ async function diffUpdater() {
             if ( typeof error !== 'string' ) { return; }
             ubolog(`Diff updater: terminate because ${error}`);
         };
+        let workerIsAlive = false;
         worker.onmessage = ev => {
             const data = ev.data || {};
             if ( data.what === 'ready' ) {
@@ -1281,6 +1282,7 @@ async function diffUpdater() {
                     worker.postMessage(assetDetails);
                     pendingOps += 1;
                 }
+                workerIsAlive = true;
                 return;
             }
             if ( data.what === 'broken' ) {
@@ -1343,6 +1345,10 @@ async function diffUpdater() {
         };
         ubolog('Diff updater: post message { what: "start" }');
         worker.postMessage({ what: 'start' });
+        vAPI.defer.once(5000).then(( ) => {
+            if ( workerIsAlive ) { return; }
+            terminate('Worker not responding');
+        });
     } catch (reason) {
         ubolog(`Diff updater: cycle aborted because ${reason}`);
         resolve();
